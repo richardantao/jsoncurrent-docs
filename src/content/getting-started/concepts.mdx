@@ -1,0 +1,101 @@
+---
+title: Core Concepts
+description: Emitter, Collector, patches, transport, and middleware.
+---
+
+# Core Concepts
+
+## The wire format
+
+jsoncurrent defines four patch operations. This is the entire protocol.
+
+| `op`       | Meaning                                      | Example                                                    |
+|------------|----------------------------------------------|------------------------------------------------------------|
+| `add`      | Initialise or replace a value at a path      | `{ path: 'title', value: 'Hello', op: 'add' }`            |
+| `append`   | Concatenate a string delta                   | `{ path: 'title', value: ' World', op: 'append' }`        |
+| `insert`   | Push a new element onto an array             | `{ path: 'tags', value: 'news', op: 'insert' }`           |
+| `complete` | The value at this path is fully assembled    | `{ path: 'title', value: 'Hello World', op: 'complete' }` |
+
+Paths use dot-notation with array indices: `sections[0].heading`.
+
+Patches are plain JSON-serialisable objects. How they travel is entirely up to you.
+
+## The path lifecycle
+
+Every path passes through three observable moments:
+
+```
+pathstart    → first patch arrives — value is the initial type ({}, [], or first chars)
+change       → fires on every data patch as the value builds
+pathcomplete → value is sealed — stable snapshot delivered
+```
+
+Use `pathstart` to show a skeleton. Use `pathcomplete` to replace it with the real content.
+
+## Numbers are atomic
+
+Numbers, booleans, and null are always emitted as a single `add` patch — never partially.
+`1997` will never appear as `1`, `19`, or `199`. This makes computed fields safe.
+
+## Emitter
+
+The Emitter is a single-pass FSM parser. It never buffers the full response — patches emit
+incrementally as tokens arrive. It runs on your server (Python or Node) and plugs into your
+existing LLM stream.
+
+```
+LLM token stream → Emitter → StreamingChunk patches
+```
+
+## Collector
+
+The Collector reconstructs the object from patches. It runs on your client and emits events
+as the object builds. It is transport-agnostic — you feed it patches from wherever they come.
+
+```
+StreamingChunk patches → Collector → assembled object + events
+```
+
+## Transport
+
+jsoncurrent has no opinion on transport. Patches are plain JSON objects — serialise them with
+`JSON.stringify()` on the server and deserialise with `JSON.parse()` on the client. SSE,
+WebSocket, HTTP streaming — all work identically.
+
+## Middleware
+
+Middleware runs before each patch is applied — on the server (before the wire) or on the
+client (before reconstruction). Call `next(patch)` to pass through, multiple times to fan out,
+or return without calling `next` to drop.
+
+```typescript
+// Server-side — runs before the patch reaches the client
+emitter.use((patch, next) => {
+  if (patch.path.includes('internal')) return // drop
+  next(patch)
+})
+
+// Client-side — runs before the patch updates state
+collector.use((patch, next) => {
+  next(patch)
+  if (patch.path.endsWith('.term')) {
+    next({ ...patch, path: patch.path.replace('.term', '.originalTerm') })
+  }
+})
+```
+
+## Complete patches
+
+`complete` patches fire when a value is fully assembled — on `}`, `]`, closing `"`, or
+primitive termination. They carry the assembled value as a snapshot.
+
+```typescript
+{ path: 'title',    value: 'Hello World',       op: 'complete' }
+{ path: 'sections', value: [{ heading: '...' }], op: 'complete' }
+```
+
+Disable on high-throughput routes where lifecycle events are not needed:
+
+```typescript
+const emitter = new Emitter({ completions: false })
+```

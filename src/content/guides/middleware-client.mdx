@@ -1,0 +1,83 @@
+---
+title: Client-side Middleware
+description: Transform, filter, and fan out patches before state reconstruction.
+---
+
+# Client-side Middleware
+
+Middleware on the Collector runs before each patch updates state. Use it to transform values,
+mirror fields, or drop patches you don't want to reach the assembled object.
+
+## Register middleware
+
+```typescript
+const collector = new Collector<Report>()
+
+collector.use((patch, next) => {
+  // your logic here
+  next(patch)
+})
+```
+
+With the React hook:
+
+```typescript
+const { data } = useJsonCurrent<Report>({
+  middleware: [
+    (patch, next) => {
+      next(patch)
+    },
+  ],
+})
+```
+
+## Common patterns
+
+### Mirror a field as it streams
+
+```typescript
+collector.use((patch, next) => {
+  next(patch)
+  if (patch.path.endsWith('.term')) {
+    next({ ...patch, path: patch.path.replace('.term', '.originalTerm') })
+  }
+})
+```
+
+### Transform values
+
+```typescript
+collector.use((patch, next) => {
+  if (patch.op === 'complete' && patch.path === 'publishedAt') {
+    next({ ...patch, value: new Date(patch.value as string) })
+    return
+  }
+  next(patch)
+})
+```
+
+### Drop a field client-side
+
+```typescript
+collector.use((patch, next) => {
+  if (patch.path.startsWith('debug')) return // drop
+  next(patch)
+})
+```
+
+### Suppress pathcomplete for a path
+
+Drop `complete` patches to prevent `pathcomplete` from firing for a specific path:
+
+```typescript
+collector.use((patch, next) => {
+  if (patch.op === 'complete' && patch.path === 'metadata') return
+  next(patch)
+})
+```
+
+## Related
+
+- [Server-side Middleware](/guides/middleware-server)
+- [Collector API](/api/js/collector)
+- [useJsonCurrent API](/api/js/use-json-current)

@@ -1,0 +1,160 @@
+---
+title: Middleware Cookbook
+description: Common middleware patterns for server and client.
+---
+
+import { Tabs } from 'nextra/components'
+
+# Middleware Cookbook
+
+Common middleware patterns. All examples work on both the Emitter (server) and Collector
+(client) unless noted.
+
+## Resolve image placeholders
+
+The model emits `{{img:filename}}` — resolve to a presigned S3 URL before the client sees it.
+Server-side only.
+
+<Tabs items={['Python', 'Node']}>
+  <Tabs.Tab>
+    ```python
+    def resolve_images(patch, next_fn):
+        if patch.op == 'add' and isinstance(patch.value, str):
+            if patch.value.startswith('{{img:'):
+                filename = patch.value[6:-2]
+                patch = patch.replace(value=get_presigned_url(filename))
+        next_fn(patch)
+
+    emitter.use(resolve_images)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```typescript
+    emitter.use((patch, next) => {
+      if (patch.op === 'add' && typeof patch.value === 'string') {
+        if (patch.value.startsWith('{{img:')) {
+          const filename = patch.value.slice(6, -2)
+          return next({ ...patch, value: getPresignedUrl(filename) })
+        }
+      }
+      next(patch)
+    })
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+## Strip restricted fields
+
+Drop patches for fields the current user has no permission to see. Server-side only.
+
+<Tabs items={['Python', 'Node']}>
+  <Tabs.Tab>
+    ```python
+    RESTRICTED = {'internalNotes', 'costBasis', 'margin'}
+
+    def strip_restricted(patch, next_fn):
+        field = patch.path.split('.')[-1]
+        if field not in RESTRICTED:
+            next_fn(patch)
+
+    emitter.use(strip_restricted)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```typescript
+    const RESTRICTED = new Set(['internalNotes', 'costBasis', 'margin'])
+
+    emitter.use((patch, next) => {
+      const field = patch.path.split('.').at(-1)
+      if (!RESTRICTED.has(field!)) next(patch)
+    })
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+## Mirror a field
+
+Copy values from one path to another as they stream. Useful for maintaining a derived field.
+Client-side.
+
+```typescript
+// Mirror term → originalTerm as it streams
+collector.use((patch, next) => {
+  next(patch)
+  if (patch.path.endsWith('.term')) {
+    next({ ...patch, path: patch.path.replace('.term', '.originalTerm') })
+  }
+})
+```
+
+## Transform a value
+
+Normalise a date string to a `Date` object before it reaches state. Client-side.
+
+```typescript
+collector.use((patch, next) => {
+  if (patch.op === 'complete' && patch.path === 'publishedAt') {
+    next({ ...patch, value: new Date(patch.value as string) })
+    return
+  }
+  next(patch)
+})
+```
+
+## Log all patches
+
+Debug helper — log every patch passing through. Works on either side.
+
+<Tabs items={['Python', 'Node']}>
+  <Tabs.Tab>
+    ```python
+    def log_patches(patch, next_fn):
+        print(f"[{patch.op}] {patch.path}")
+        next_fn(patch)
+
+    emitter.use(log_patches)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```typescript
+    emitter.use((patch, next) => {
+      console.log(`[${patch.op}] ${patch.path}`)
+      next(patch)
+    })
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+## Suppress pathcomplete for a path
+
+Drop `complete` patches for a specific path to prevent `pathcomplete` from firing on the
+client. Client-side.
+
+```typescript
+collector.use((patch, next) => {
+  if (patch.op === 'complete' && patch.path === 'metadata') return
+  next(patch)
+})
+```
+
+## Compose multiple middleware
+
+Register in order — runs top to bottom:
+
+<Tabs items={['Python', 'Node']}>
+  <Tabs.Tab>
+    ```python
+    emitter.use(resolve_images)
+    emitter.use(strip_restricted)
+    emitter.use(log_patches)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```typescript
+    emitter
+      .use(resolveImages)
+      .use(stripRestricted)
+      .use(logPatches)
+    ```
+  </Tabs.Tab>
+</Tabs>

@@ -1,0 +1,117 @@
+---
+title: "Quick-start: Python + React"
+description: Stream structured JSON from a FastAPI backend to a React client.
+---
+
+import { Steps, Callout } from 'nextra/components'
+
+# Quick-start: Python + React
+
+Stream structured JSON from a FastAPI backend to a React client in under 10 minutes.
+
+<Steps>
+
+### Install both packages
+
+```bash
+pip install jsoncurrent
+npm install jsoncurrent
+```
+
+### Set up the FastAPI Emitter
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from jsoncurrent import Emitter
+import anthropic
+import asyncio
+
+app = FastAPI()
+client = anthropic.Anthropic()
+
+@app.get('/stream')
+async def stream():
+    queue = asyncio.Queue()
+
+    emitter = Emitter()
+    emitter.on('patch', lambda chunk: queue.put_nowait(f"data: {chunk.to_json()}\n\n"))
+    emitter.on('complete', lambda: queue.put_nowait("data: [DONE]\n\n"))
+
+    async def generate():
+        with client.messages.stream(
+            model="claude-opus-4-6",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": "Generate a report as JSON..."}],
+        ) as stream:
+            for text in stream.text_stream:
+                emitter.write(text)
+        emitter.flush()
+
+        while not queue.empty():
+            yield await queue.get()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+```
+
+### Wire the React Collector
+
+```tsx
+import { useJsonCurrent } from 'jsoncurrent/react'
+import { useEffect } from 'react'
+
+interface Report {
+  title: string
+  sections: { heading: string; body: string }[]
+}
+
+export function ReportViewer() {
+  const { data, status, consume, complete, reset } = useJsonCurrent<Report>()
+
+  useEffect(() => {
+    reset()
+    const source = new EventSource('/stream')
+    source.onmessage = (event) => {
+      if (event.data === '[DONE]') { complete(); source.close(); return }
+      consume(JSON.parse(event.data))
+    }
+    return () => source.close()
+  }, [])
+
+  return (
+    <div>
+      <h1>{data.title}</h1>
+      {data.sections?.map((section, i) => (
+        <section key={i}>
+          <h2>{section.heading}</h2>
+          <p>{section.body}</p>
+        </section>
+      ))}
+      {status === 'streaming' && <p>Generating…</p>}
+    </div>
+  )
+}
+```
+
+### Run it
+
+```bash
+# Terminal 1
+uvicorn main:app --reload
+
+# Terminal 2
+npm run dev
+```
+
+</Steps>
+
+<Callout type="info">
+  `consume()` expects a `StreamingChunk` object — deserialise from your transport with
+  `JSON.parse()` before calling it.
+</Callout>
+
+## Next steps
+
+- [Add middleware to resolve placeholders](/guides/middleware-server)
+- [Path lifecycle events for progressive rendering](/guides/path-lifecycle)
+- [Full Emitter API reference](/api/python/emitter)

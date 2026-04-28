@@ -1,0 +1,101 @@
+---
+title: Emitter (Node)
+description: API reference for the Node.js Emitter.
+---
+
+# Emitter
+
+The Node.js Emitter parses raw LLM token output and emits `StreamingChunk` patch operations.
+Runs on your server. Transport is out of scope — serialise patches however your stack requires.
+
+## Constructor
+
+```typescript
+import { Emitter } from 'jsoncurrent'
+
+const emitter = new Emitter(options?)
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `root` | `string` | `''` | Namespace prefix for all emitted paths. E.g. `'prediction'` produces paths like `prediction.title`. |
+| `completions` | `boolean` | `true` | Emit `complete` patches when a value is fully assembled. Set `false` on high-throughput routes where `pathcomplete` events are not used. |
+
+## Methods
+
+### `emitter.write(token)`
+
+Feed a raw token from the LLM stream.
+
+```typescript
+emitter.write(event.delta.text)
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `token` | `string` | Raw token string from the LLM response stream. |
+
+### `emitter.flush()`
+
+Signal end of stream. Finalises any pending state, emits `complete`, and resets internal
+state. Call this when the LLM stream closes.
+
+```typescript
+emitter.flush()
+```
+
+### `emitter.reset()`
+
+Reset internal state without emitting `complete`. Useful for reusing an Emitter instance
+across multiple requests.
+
+### `emitter.use(fn)`
+
+Register a middleware function. Returns `this` for chaining.
+
+```typescript
+emitter.use((patch, next) => {
+  next(patch)
+})
+```
+
+See [Server-side Middleware](/guides/middleware-server) for patterns.
+
+### `emitter.on(event, fn)`
+
+Register an event listener.
+
+## Events
+
+### `patch`
+
+Fires for each `StreamingChunk` emitted. This is what you serialise and send to the client.
+
+```typescript
+emitter.on('patch', (chunk: StreamingChunk) => {
+  res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+})
+```
+
+### `complete`
+
+Fires when `flush()` is called. Signal end of stream to the client.
+
+```typescript
+emitter.on('complete', () => {
+  res.write('data: [DONE]\n\n')
+  res.end()
+})
+```
+
+### `error`
+
+Fires on parse errors.
+
+```typescript
+emitter.on('error', (err: JsonCurrentError) => {
+  console.error('Emitter error', err)
+})
+```

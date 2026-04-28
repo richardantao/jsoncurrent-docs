@@ -1,0 +1,62 @@
+---
+title: Interoperability
+description: Build a compliant Emitter or Collector in any language.
+---
+
+# Interoperability
+
+The jsoncurrent wire format is language-agnostic. The Python and Node implementations are
+reference implementations — any Emitter or Collector that speaks the same wire format is a
+first-class participant.
+
+## Building a compliant Emitter
+
+An Emitter must:
+
+1. Parse raw JSON token-by-token using a single-pass approach (no buffering the full response)
+2. Emit `add` patches for new values — empty `{}` or `[]` for containers, the value directly
+   for primitives
+3. Emit `append` patches for subsequent string chunks at an already-initialised path
+4. Numbers, booleans, and null must be **atomic** — never emitted partially
+5. Emit `complete` patches (unless disabled) in child-before-parent order
+6. The `complete` patch value must be a deep snapshot of the assembled value at that path
+
+## Building a compliant Collector
+
+A Collector must:
+
+1. Apply `add` patches via `setPath(state, path, value)`
+2. Apply `append` patches by concatenating onto the existing string at that path
+3. Apply `insert` patches by pushing onto the existing array at that path
+4. Handle `complete` patches without mutating state — fire a `pathcomplete` event using the
+   patch's `value` field directly (already snapshotted by the Emitter)
+5. Handle the absence of `complete` patches gracefully
+6. Fire `pathstart` on the first `add` or `insert` at a previously-unseen path
+
+## Path parsing
+
+Paths use dot-notation with bracket array indices. A compliant parser must handle:
+
+```
+''               → root (empty array of keys)
+'title'          → ['title']
+'sections[0]'    → ['sections', 0]
+'sections[0].heading' → ['sections', 0, 'heading']
+```
+
+## Conformance checklist
+
+- [ ] Numbers emitted as a single `add` — never partially
+- [ ] Booleans and null emitted as a single `add` — never partially  
+- [ ] Containers (`{}`, `[]`) emit a fresh empty value in the `add` patch
+- [ ] `complete` patch value is a deep snapshot, not a live reference
+- [ ] Children complete before parents
+- [ ] Empty path `''` handled for root container
+- [ ] `complete` patches absent when `completions: false` — Collector handles gracefully
+- [ ] `append` only appears after `add` at the same path
+
+## Reference implementations
+
+- **Node Emitter** — [`jsoncurrent`](https://github.com/richardantao/jsoncurrent-js)
+- **Python Emitter** — [`jsoncurrent`](https://github.com/richardantao/jsoncurrent-py)
+- **JS Collector** — [`jsoncurrent`](https://github.com/richardantao/jsoncurrent-js)

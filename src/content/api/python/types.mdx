@@ -1,0 +1,97 @@
+---
+title: Types (Python)
+description: Python type definitions for jsoncurrent.
+---
+
+# Types
+
+## StreamingChunk
+
+A single patch emitted by the Emitter. Frozen dataclass — immutable after creation.
+
+```python
+from jsoncurrent.types import StreamingChunk
+
+@dataclass(frozen=True)
+class StreamingChunk:
+    path:  str
+    value: Any
+    op:    Op  # 'add' | 'append' | 'insert' | 'complete'
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `str` | Dot-notation path with array indices. E.g. `sections[0].heading`. Empty string `''` for the root object. |
+| `value` | `Any` | Patch payload. For `complete` patches, carries the fully assembled snapshot. |
+| `op` | `Op` | The patch operation. |
+
+### Methods
+
+#### `chunk.to_json()`
+
+Serialise to the wire format JSON string.
+
+```python
+f"data: {chunk.to_json()}\n\n"
+# → 'data: {"path": "title", "value": "Hello", "op": "add"}\n\n'
+```
+
+#### `chunk.replace(**kwargs)`
+
+Return a new `StreamingChunk` with the given fields replaced. Use this in middleware.
+
+```python
+patch = patch.replace(value=get_presigned_url(patch.value[6:-2]))
+```
+
+#### `StreamingChunk.from_json(raw)`
+
+Deserialise from a wire format JSON string.
+
+```python
+chunk = StreamingChunk.from_json('{"path":"title","value":"Hello","op":"add"}')
+```
+
+## Op
+
+```python
+from typing import Literal
+
+Op = Literal['add', 'append', 'insert', 'complete']
+```
+
+| Value | Meaning |
+|-------|---------|
+| `'add'` | Initialise or replace a value at a path. |
+| `'append'` | Concatenate a string delta onto an existing string. |
+| `'insert'` | Push a new element onto an existing array. |
+| `'complete'` | The value at this path is fully assembled. `value` carries the snapshot. |
+
+## MiddlewareFn
+
+```python
+from jsoncurrent.types import MiddlewareFn
+
+MiddlewareFn = Callable[[StreamingChunk, Callable[[StreamingChunk], None]], None]
+```
+
+Middleware function signature used by `Emitter.use()`.
+
+```python
+def my_middleware(patch: StreamingChunk, next_fn: Callable) -> None:
+    next_fn(patch)
+
+emitter.use(my_middleware)
+```
+
+## JsonCurrentError
+
+```python
+from jsoncurrent import JsonCurrentError
+
+class JsonCurrentError(Exception):
+    cause: BaseException | None
+```
+
+Raised or emitted via the `error` event when an unrecoverable parse error occurs in the
+Emitter.

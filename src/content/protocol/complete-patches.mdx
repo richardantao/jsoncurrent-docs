@@ -1,0 +1,89 @@
+---
+title: Complete patches
+description: How complete patches work, what they carry, and when to disable them.
+---
+
+# Complete patches
+
+`complete` patches signal that a value at a path is fully assembled and will not receive
+further patches in this stream.
+
+## What they carry
+
+Unlike `add`, `append`, and `insert` which carry deltas, `complete` carries the full
+assembled snapshot at the moment of completion:
+
+```json
+{ "path": "title",       "value": "Quarterly Report",        "op": "complete" }
+{ "path": "sections[0]", "value": { "heading": "Revenue" },  "op": "complete" }
+{ "path": "sections",    "value": [{ "heading": "Revenue" }], "op": "complete" }
+{ "path": "",            "value": { "title": "...", ... },    "op": "complete" }
+```
+
+The value is a **deep snapshot** — safe to store and render without risk of it being mutated
+by subsequent patches.
+
+## When they fire
+
+The Emitter fires a `complete` patch at the stack-pop boundary — the exact moment a value's
+closing character is parsed:
+
+| JSON construct | Fires on |
+|----------------|----------|
+| Object `{}` | The closing `}` |
+| Array `[]` | The closing `]` |
+| String | The closing `"` |
+| Number | The terminating `,` `}` or `]` |
+| Boolean / null | When the literal is fully accumulated |
+
+Children always complete before parents:
+
+```
+sections[0].heading → complete
+sections[0].body    → complete
+sections[0]         → complete
+sections            → complete
+(root)              → complete
+```
+
+## How the Collector uses them
+
+The Collector does not mutate state on `complete` patches. It reads the `value` from the
+patch (already snapshotted by the Emitter) and fires `pathcomplete`:
+
+```typescript
+collector.on('pathcomplete', (path, value) => {
+  // value is the snapshot from the complete patch
+  renderSection(value)
+})
+```
+
+## Opting out
+
+`complete` patches are emitted by default. Disable on routes where lifecycle events are
+not used:
+
+```python
+# Python
+emitter = Emitter(completions=False)
+```
+
+```typescript
+// Node
+const emitter = new Emitter({ completions: false })
+```
+
+Collectors handle their absence gracefully — `pathcomplete` simply never fires.
+
+## Middleware can intercept complete patches
+
+Middleware receives all four ops. Drop a `complete` patch to suppress `pathcomplete` for
+a specific path:
+
+```typescript
+collector.use((patch, next) => {
+  // Suppress pathcomplete for the metadata field
+  if (patch.op === 'complete' && patch.path === 'metadata') return
+  next(patch)
+})
+```

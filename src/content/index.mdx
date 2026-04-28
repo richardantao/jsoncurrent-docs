@@ -1,0 +1,59 @@
+---
+title: jsoncurrent
+description: Transport-agnostic patch protocol for streaming incremental JSON.
+---
+
+import { Tabs } from 'nextra/components'
+
+# jsoncurrent
+
+Transport-agnostic patch protocol for streaming incremental JSON.
+
+```
+tokens → [Emitter] → patch stream → [Collector] → assembled object
+```
+
+{/* TODO: Embed interactive demo widget */}
+
+## Install
+
+<Tabs items={['npm', 'pnpm', 'pip']}>
+  <Tabs.Tab>
+    ```bash
+    npm install jsoncurrent
+    ```
+  </Tabs.Tab>
+	<Tabs.Tab>
+    ```bash
+    pnpm add jsoncurrent
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```bash
+    pip install jsoncurrent
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+## The problem
+
+LLMs generate JSON token by token. Standard parsers throw on incomplete JSON. jsoncurrent solves this with a patch protocol — the Emitter on your server parses raw tokens as they arrive and emits structured patch operations. The Collector on your client applies them incrementally, giving you a live partially-assembled object you can render immediately.
+
+```typescript
+// What the LLM emits mid-stream (unparseable):
+{"title": "Quarterly Report", "sections": [{"heading": "Exec
+
+// What jsoncurrent delivers to your client as it arrives:
+{ path: 'title',               value: 'Quarterly Report', op: 'add'    }
+{ path: 'sections',            value: [],                 op: 'add'    }
+{ path: 'sections[0]',         value: {},                 op: 'add'    }
+{ path: 'sections[0].heading', value: 'Exec',             op: 'add'    }
+{ path: 'sections[0].heading', value: 'utive Summary',    op: 'append' }
+```
+
+## Quick links
+
+- [Quick-start: Python + React](/getting-started/quickstart-python)
+- [Quick-start: Node + React](/getting-started/quickstart-node)
+- [Core concepts](/getting-started/concepts)
+- [API reference](/api)

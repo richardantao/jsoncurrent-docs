@@ -1,0 +1,102 @@
+---
+title: Types
+description: TypeScript type definitions for jsoncurrent.
+---
+
+# Types
+
+## StreamingChunk
+
+A single patch emitted by the Emitter and consumed by the Collector.
+
+```typescript
+interface StreamingChunk {
+  path:  string;
+  value: unknown;
+  op:    Op;
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `string` | Dot-notation path with array indices. E.g. `sections[0].heading`. Empty string `''` for the root object. |
+| `value` | `unknown` | Patch payload. For `complete` patches, carries the fully assembled snapshot at that path. |
+| `op` | `Op` | The patch operation. |
+
+## Op
+
+```typescript
+type Op = 'add' | 'append' | 'insert' | 'complete'
+```
+
+| Value | Meaning |
+|-------|---------|
+| `'add'` | Initialise or replace a value at a path. |
+| `'append'` | Concatenate a string delta onto an existing string. |
+| `'insert'` | Push a new element onto an existing array. |
+| `'complete'` | The value at this path is fully assembled. `value` carries the snapshot. |
+
+## MiddlewareFn
+
+```typescript
+type MiddlewareFn = (
+  patch: StreamingChunk,
+  next: (patch: StreamingChunk) => void
+) => void
+```
+
+Middleware function signature used by both `Emitter.use()` and `Collector.use()`.
+
+## StreamStatus
+
+```typescript
+type StreamStatus = 'idle' | 'streaming' | 'complete' | 'error'
+```
+
+Status values returned by `useJsonCurrent`.
+
+## CollectorEvents
+
+```typescript
+interface CollectorEvents<T> {
+  change:       (state: Partial<T>) => void
+  complete:     (state: T) => void
+  pathstart:    (path: string, value: unknown) => void
+  pathcomplete: (path: string, value: unknown) => void
+  error:        (err: JsonCurrentError) => void
+}
+```
+
+## EmitterEvents
+
+```typescript
+interface EmitterEvents {
+  patch:    (chunk: StreamingChunk) => void
+  complete: () => void
+  error:    (err: JsonCurrentError) => void
+}
+```
+
+## JsonCurrentError
+
+```typescript
+class JsonCurrentError extends Error {
+  readonly cause?: unknown
+}
+```
+
+Thrown or emitted via the `error` event when an unrecoverable parse error occurs in the
+Emitter, or when an unknown op is consumed by the Collector.
+
+## UseJsonCurrentOptions
+
+```typescript
+interface UseJsonCurrentOptions<T> {
+  middleware?:     MiddlewareFn[]
+  onChange?:       (state: Partial<T>) => void
+  onPathStart?:    (path: string, value: unknown) => void
+  onPathComplete?: (path: string, value: unknown) => void
+  onComplete?:     (state: T) => void
+  onError?:        (err: JsonCurrentError) => void
+}
+```

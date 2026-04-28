@@ -1,0 +1,50 @@
+---
+title: Overview
+description: What jsoncurrent is and what problem it solves.
+---
+
+# Overview
+
+jsoncurrent is a streaming JSON patch protocol for LLM responses. It solves the problem of
+delivering structured JSON to a client incrementally — as tokens arrive from the model —
+without waiting for a complete, parseable response.
+
+## How it works
+
+The protocol has two components:
+
+**Emitter** — runs on your server (Python or Node). Consumes raw LLM token output and emits
+`StreamingChunk` patch operations describing what changed. Plugs into your existing LLM stream.
+
+**Collector** — runs on your client (JS/TS). Consumes patches and reconstructs the object
+incrementally. Emits `change`, `pathstart`, `pathcomplete`, and `complete` events as the
+object builds.
+
+```
+LLM tokens → [Emitter] → { path, value, op } patches → [Collector] → assembled object
+```
+
+Transport is yours to own. jsoncurrent has no opinion on SSE, WebSocket, or HTTP streaming —
+patches are plain JSON objects that you serialise and deserialise however your stack requires.
+
+## When to use it
+
+jsoncurrent is the right tool when:
+
+- Your LLM backend is Python and you need to stream structured output to a JS client
+- Your server needs to participate in the stream — resolving placeholders, stripping fields,
+  injecting database values — before the client sees anything
+- You want path-level lifecycle events (`pathstart` / `pathcomplete`) to drive progressive
+  rendering without polling the full assembled state
+
+## When not to use it
+
+If your server is Node, forwards the raw LLM stream unchanged, and the client can handle
+whatever the model emits, [`jsonriver`](https://github.com/rictic/jsonriver) is simpler and
+battle-tested for that case.
+
+## Next steps
+
+- [Quick-start: Python + React](/getting-started/quickstart-python)
+- [Quick-start: Node + React](/getting-started/quickstart-node)
+- [Core concepts](/getting-started/concepts)

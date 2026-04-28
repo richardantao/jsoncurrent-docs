@@ -1,0 +1,171 @@
+---
+title: FastAPI + React
+description: Full end-to-end example streaming structured JSON from FastAPI to React.
+---
+
+import { FileTree } from 'nextra/components'
+
+# FastAPI + React
+
+Full end-to-end example. Streams a structured report from a FastAPI backend to a React
+client over SSE.
+
+## Project structure
+
+<FileTree>
+  <FileTree.Folder name="backend" defaultOpen>
+    <FileTree.File name="main.py" />
+    <FileTree.File name="requirements.txt" />
+  </FileTree.Folder>
+  <FileTree.Folder name="frontend" defaultOpen>
+    <FileTree.File name="src/App.tsx" />
+    <FileTree.File name="package.json" />
+  </FileTree.Folder>
+</FileTree>
+
+## Backend
+
+```python filename="backend/main.py"
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from jsoncurrent import Emitter
+import anthropic
+import asyncio
+
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"])
+
+client = anthropic.Anthropic()
+
+PROMPT = """Generate a quarterly business report as JSON with this shape:
+{
+  "title": "...",
+  "quarter": "Q2 2026",
+  "sections": [
+    { "heading": "...", "body": "..." }
+  ]
+}
+Return only valid JSON, no markdown."""
+
+@app.get("/stream")
+async def stream():
+    queue: asyncio.Queue[str] = asyncio.Queue()
+
+    emitter = Emitter()
+
+    # Resolve any placeholder values before they reach the client
+    def resolve_patch(patch, next_fn):
+        next_fn(patch)
+    emitter.use(resolve_patch)
+
+    emitter.on("patch", lambda chunk: queue.put_nowait(f"data: {chunk.to_json()}\n\n"))
+    emitter.on("complete", lambda: queue.put_nowait("data: [DONE]\n\n"))
+
+    async def generate():
+        with client.messages.stream(
+            model="claude-opus-4-6",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": PROMPT}],
+        ) as stream:
+            for text in stream.text_stream:
+                emitter.write(text)
+        emitter.flush()
+
+        while not queue.empty():
+            yield await queue.get()
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+```
+
+```txt filename="backend/requirements.txt"
+fastapi
+uvicorn
+anthropic
+jsoncurrent
+```
+
+## Frontend
+
+```tsx filename="frontend/src/App.tsx"
+import { useJsonCurrent } from 'jsoncurrent/react'
+import { useEffect } from 'react'
+
+interface Section {
+  heading: string
+  body: string
+}
+
+interface Report {
+  title: string
+  quarter: string
+  sections: Section[]
+}
+
+export default function App() {
+  const { data, status, consume, complete, reset } = useJsonCurrent<Report>({
+    onPathStart: (path) => {
+      if (/^sections\[\d+\]$/.test(path)) {
+        console.log(`Section ${path} started streaming`)
+      }
+    },
+    onPathComplete: (path, value) => {
+      if (/^sections\[\d+\]$/.test(path)) {
+        console.log(`Section ${path} complete`, value)
+      }
+    },
+    onComplete: (final) => {
+      console.log('Report complete', final)
+    },
+  })
+
+  useEffect(() => {
+    reset()
+    const source = new EventSource('http://localhost:8000/stream')
+    source.onmessage = (event) => {
+      if (event.data === '[DONE]') { complete(); source.close(); return }
+      consume(JSON.parse(event.data))
+    }
+    source.onerror = () => source.close()
+    return () => source.close()
+  }, [])
+
+  return (
+    <main style={{ maxWidth: 720, margin: '0 auto', padding: '2rem' }}>
+      <h1>{data.title ?? 'Loading…'}</h1>
+      {data.quarter && <p style={{ color: '#666' }}>{data.quarter}</p>}
+
+      {data.sections?.map((section, i) => (
+        <section key={i} style={{ marginTop: '2rem' }}>
+          <h2>{section.heading}</h2>
+          <p>{section.body}</p>
+        </section>
+      ))}
+
+      {status === 'streaming' && (
+        <p style={{ color: '#999', marginTop: '2rem' }}>Generating…</p>
+      )}
+    </main>
+  )
+}
+```
+
+## Run it
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+# Frontend (new terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173` and watch the report assemble in real time.

@@ -1,0 +1,39 @@
+---
+title: v0.2.0
+description: Type renames for React interfaces and error class.
+---
+
+# v0.2.0
+
+## Changed
+
+- React subpath type renamed: `UseJsonPulseOptions` → `UseJsonCurrentOptions`
+- React subpath return type renamed: `UseJsonPulseReturn` → `UseJsonCurrentReturn`
+- Error class renamed: `JsonPulseError` → `JsonCurrentError`
+
+## Removed
+
+- Legacy type names: `UseJsonPulseOptions`, `UseJsonPulseReturn`
+- Legacy error class: `JsonPulseError`
+
+## Migration
+
+Update type imports from `jsoncurrent/react`:
+
+```typescript
+// Before
+import type { UseJsonPulseOptions } from 'jsoncurrent/react'
+
+// After
+import type { UseJsonCurrentOptions } from 'jsoncurrent/react'
+```
+
+Replace `instanceof` checks:
+
+```typescript
+// Before
+if (err instanceof JsonPulseError) { ... }
+
+// After
+if (err instanceof JsonCurrentError) { ... }
+```

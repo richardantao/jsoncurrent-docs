@@ -1,0 +1,125 @@
+---
+title: Collector
+description: API reference for the JS/TS Collector.
+---
+
+# Collector
+
+The Collector reconstructs the assembled object from patches. Runs on your client.
+Transport-agnostic — feed it patches from SSE, WebSocket, or any source.
+
+## Constructor
+
+```typescript
+import { Collector } from 'jsoncurrent'
+
+const collector = new Collector<T>()
+```
+
+The type parameter `T` is the expected shape of the fully assembled object.
+
+## Properties
+
+### `collector.value`
+
+The current partially-assembled state. Updates after every data patch.
+
+```typescript
+console.log(collector.value) // Partial<T>
+```
+
+## Methods
+
+### `collector.consume(chunk)`
+
+Feed a deserialised `StreamingChunk` patch. Call this for each message from your transport.
+
+```typescript
+source.onmessage = (event) => {
+  collector.consume(JSON.parse(event.data)) // ← deserialise first
+}
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `chunk` | `StreamingChunk` | Deserialised patch object. |
+
+### `collector.complete()`
+
+Signal end of stream. Fires the `complete` event with the fully assembled object.
+
+```typescript
+collector.complete()
+```
+
+### `collector.reset()`
+
+Reset state and seen paths. Preserves middleware and event listeners. Returns `this`.
+
+```typescript
+collector.reset()
+```
+
+### `collector.use(fn)`
+
+Register a middleware function. Returns `this` for chaining.
+
+```typescript
+collector.use((patch, next) => {
+  next(patch)
+})
+```
+
+## Events
+
+### `change`
+
+Fires on every data patch (`add`, `append`, `insert`) with the current partial state.
+
+```typescript
+collector.on('change', (state: Partial<T>) => {
+  setData(state)
+})
+```
+
+### `complete`
+
+Fires once when `complete()` is called with the fully assembled object.
+
+```typescript
+collector.on('complete', (final: T) => {
+  save(final)
+})
+```
+
+### `pathstart`
+
+Fires the first time a path receives a data patch within this stream. `value` is the initial
+type — `{}` for objects, `[]` for arrays, or the first string chunk. Resets on `reset()`.
+
+```typescript
+collector.on('pathstart', (path: string, value: unknown) => {
+  if (/^sections\[\d+\]$/.test(path)) showSkeleton(path)
+})
+```
+
+### `pathcomplete`
+
+Fires when a value at a path is fully assembled. `value` is a deep-snapshotted copy of the
+assembled value — safe to store and render.
+
+```typescript
+collector.on('pathcomplete', (path: string, value: unknown) => {
+  if (/^sections\[\d+\]$/.test(path)) replaceSkeleton(path, value)
+})
+```
+
+### `error`
+
+Fires when an unknown op or malformed patch is consumed.
+
+```typescript
+collector.on('error', (err: JsonCurrentError) => {
+  console.error('Collector error', err)
+})
+```

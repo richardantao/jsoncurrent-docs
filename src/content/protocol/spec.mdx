@@ -1,0 +1,106 @@
+---
+title: Wire Protocol Spec
+description: The jsoncurrent wire format — the stable public contract.
+---
+
+# Wire Protocol Spec
+
+The jsoncurrent wire format is the stable public contract. Any Emitter in any language that
+produces this format is a first-class participant. Any Collector that consumes it will work.
+
+## Patch shape
+
+Every patch is a JSON object with three fields:
+
+```json
+{
+  "path":  "sections[0].heading",
+  "value": "Executive Summary",
+  "op":    "add"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `string` | Dot-notation path with bracket array indices. `''` for the root. |
+| `value` | `any` | The patch payload. Type depends on `op`. |
+| `op` | `string` | One of `add`, `append`, `insert`, `complete`. |
+
+## Path notation
+
+Paths use dot-notation with bracket array indices:
+
+```
+title                    → top-level field
+sections[0]              → first element of an array
+sections[0].heading      → nested field inside an array element
+meta.createdAt           → nested object field
+```
+
+The root object itself has path `''` (empty string). Implementations must handle this.
+
+## Operations
+
+### `add`
+
+Initialise or replace the value at a path. The first patch at any path is always `add`.
+
+```json
+{ "path": "title",    "value": "",   "op": "add" }
+{ "path": "sections", "value": [],   "op": "add" }
+{ "path": "count",    "value": 42,   "op": "add" }
+{ "path": "flag",     "value": true, "op": "add" }
+```
+
+Object and array `add` patches carry an empty `{}` or `[]` — not the populated value. The
+Collector builds its own copy from subsequent patches.
+
+### `append`
+
+Concatenate a string delta onto an existing string value. Always follows an `add` at the
+same path.
+
+```json
+{ "path": "title", "value": "Hello",  "op": "add"    }
+{ "path": "title", "value": " World", "op": "append"  }
+```
+
+### `insert`
+
+Push a new element onto an existing array. Used for top-level array values.
+
+```json
+{ "path": "tags", "value": "biology", "op": "insert" }
+```
+
+### `complete`
+
+The value at this path is fully assembled. `value` carries a deep snapshot of the assembled
+value at the moment of completion.
+
+```json
+{ "path": "title",    "value": "Hello World",              "op": "complete" }
+{ "path": "sections", "value": [{ "heading": "Revenue" }], "op": "complete" }
+```
+
+`complete` patches are optional — Emitters may omit them via `completions: false`.
+Collectors must handle their absence gracefully.
+
+## Ordering guarantees
+
+- The first patch at any path is always `op: 'add'`.
+- `append` only appears after `add` at the same path.
+- Children always complete before parents — `sections[0]` completes before `sections`.
+- The root `complete` patch is always the last patch before the stream ends.
+
+## Transport
+
+Patches are plain JSON — transport is out of scope. The reference implementations use
+`JSON.stringify` for serialisation and `JSON.parse` for deserialisation. Any transport that
+can carry text works.
+
+## Versioning
+
+The wire format is semver-major gated. Any change to the `StreamingChunk` shape — adding,
+removing, or changing a field — requires a major version bump, since it breaks both Emitters
+and Collectors simultaneously regardless of package version.

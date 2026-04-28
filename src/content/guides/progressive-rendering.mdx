@@ -1,0 +1,105 @@
+---
+title: Progressive Rendering with React
+description: Skeleton → streaming → complete rendering pattern with useJsonCurrent.
+---
+
+# Progressive Rendering with React
+
+jsoncurrent gives you three rendering strategies you can mix per-field:
+
+**Stream everything** — render from `data` on every `change` event. Fields populate as they
+arrive. Simple, works for most cases.
+
+**Wait for completion** — render from `onPathComplete`. Only show a field once it's fully
+assembled. Good for fields where partial values look broken.
+
+**Skeleton → complete** — show a skeleton on `pathstart`, replace with real content on
+`pathcomplete`. The best UX for complex nested values like cards or sections.
+
+## Stream everything
+
+```tsx
+function Report() {
+  const { data, status } = useJsonCurrent<Report>({ /* wire transport */ })
+
+  return (
+    <div>
+      <h1>{data.title}</h1>
+      {data.sections?.map((s, i) => (
+        <section key={i}>
+          <h2>{s.heading}</h2>
+          <p>{s.body}</p>
+        </section>
+      ))}
+      {status === 'streaming' && <Spinner />}
+    </div>
+  )
+}
+```
+
+## Skeleton → complete
+
+```tsx
+function Report() {
+  const [sections, setSections] = useState<RenderedSection[]>([])
+
+  const { data, status, consume, complete, reset } = useJsonCurrent<Report>({
+    onPathStart: (path) => {
+      if (/^sections\[\d+\]$/.test(path)) {
+        setSections(prev => [...prev, { id: path, ready: false, value: null }])
+      }
+    },
+    onPathComplete: (path, value) => {
+      if (/^sections\[\d+\]$/.test(path)) {
+        setSections(prev =>
+          prev.map(s => s.id === path ? { ...s, ready: true, value } : s)
+        )
+      }
+    },
+  })
+
+  return (
+    <div>
+      <h1>{data.title}</h1>
+      {sections.map(s =>
+        s.ready
+          ? <SectionCard key={s.id} {...s.value} />
+          : <SectionSkeleton key={s.id} />
+      )}
+    </div>
+  )
+}
+```
+
+## Wait for a specific field
+
+Use `onPathComplete` with an exact path match to only render once a field is sealed:
+
+```tsx
+const [description, setDescription] = useState<string>('')
+
+useJsonCurrent<Report>({
+  onPathComplete: (path, value) => {
+    if (path === 'description') setDescription(value as string)
+  },
+})
+```
+
+## onChange vs data
+
+`data` updates on every patch and triggers a re-render. `onChange` gives you the same state
+without necessarily triggering a React re-render — useful for syncing to an external store
+or writing to a ref:
+
+```tsx
+const latestRef = useRef<Partial<Report>>({})
+
+useJsonCurrent<Report>({
+  onChange: (state) => { latestRef.current = state },
+})
+```
+
+## Related
+
+- [Path Lifecycle Events](/guides/path-lifecycle)
+- [useJsonCurrent API](/api/js/use-json-current)

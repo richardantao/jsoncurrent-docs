@@ -1,0 +1,107 @@
+---
+title: Flask + Vanilla JS
+description: Stream structured JSON from Flask to a plain HTML page with no framework.
+---
+
+# Flask + Vanilla JS
+
+No React, no build step. Streams a report from Flask to a plain HTML page using the
+`Collector` directly.
+
+## Backend
+
+```python filename="app.py"
+from flask import Flask, Response, render_template, stream_with_context
+from jsoncurrent import Emitter
+import anthropic
+import json
+
+app = Flask(__name__)
+client = anthropic.Anthropic()
+
+PROMPT = """Generate a short report as JSON:
+{ "title": "...", "summary": "...", "points": ["...", "..."] }
+Return only valid JSON."""
+
+@app.get('/')
+def index():
+    return render_template('index.html')
+
+@app.get('/stream')
+def stream():
+    def generate():
+        emitter = Emitter()
+        patches = []
+        emitter.on('patch', patches.append)
+
+        with client.messages.stream(
+            model='claude-opus-4-6',
+            max_tokens=2048,
+            messages=[{'role': 'user', 'content': PROMPT}],
+        ) as stream:
+            for text in stream.text_stream:
+                emitter.write(text)
+                for chunk in patches:
+                    yield f"data: {chunk.to_json()}\n\n"
+                patches.clear()
+
+        emitter.flush()
+        yield "data: [DONE]\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache'},
+    )
+```
+
+## Frontend
+
+```html filename="templates/index.html"
+<!DOCTYPE html>
+<html>
+<head>
+  <title>jsoncurrent — Flask example</title>
+  <script type="module">
+    import { Collector } from 'https://esm.sh/jsoncurrent@latest'
+
+    const collector = new Collector()
+
+    collector.on('change', (state) => {
+      if (state.title)   document.getElementById('title').textContent   = state.title
+      if (state.summary) document.getElementById('summary').textContent = state.summary
+      if (state.points) {
+        document.getElementById('points').innerHTML = state.points
+          .map(p => `<li>${p}</li>`)
+          .join('')
+      }
+    })
+
+    collector.on('complete', () => {
+      document.getElementById('status').textContent = 'Done'
+    })
+
+    const source = new EventSource('/stream')
+    source.onmessage = (event) => {
+      if (event.data === '[DONE]') { collector.complete(); source.close(); return }
+      collector.consume(JSON.parse(event.data))
+    }
+  </script>
+</head>
+<body>
+  <h1 id="title">Loading…</h1>
+  <p id="summary"></p>
+  <ul id="points"></ul>
+  <p id="status">Streaming…</p>
+</body>
+</html>
+```
+
+## Run it
+
+```bash
+pip install flask anthropic jsoncurrent
+python app.py
+```
+
+Open `http://localhost:5000`.

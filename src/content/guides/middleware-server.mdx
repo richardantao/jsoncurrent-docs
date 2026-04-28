@@ -1,0 +1,127 @@
+---
+title: Server-side Middleware
+description: Intercept and modify patches before they reach the client.
+---
+
+import { Tabs } from 'nextra/components'
+
+# Server-side Middleware
+
+Middleware on the Emitter runs before any patch reaches the client. This is where you
+resolve placeholders, strip restricted fields, inject database values, and normalise formats.
+
+## The middleware signature
+
+<Tabs items={['Python', 'Node']}>
+  <Tabs.Tab>
+    ```python
+    def my_middleware(patch: StreamingChunk, next_fn: Callable) -> None:
+        # transform, drop, or fan out
+        next_fn(patch)
+    
+    emitter.use(my_middleware)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```typescript
+    emitter.use((patch, next) => {
+      // transform, drop, or fan out
+      next(patch)
+    })
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+Call `next(patch)` to pass through. Return without calling `next` to drop. Call `next`
+multiple times to fan out. Middleware runs in registration order.
+
+## Common patterns
+
+### Resolve placeholders
+
+<Tabs items={['Python', 'Node']}>
+  <Tabs.Tab>
+    ```python
+    def resolve_images(patch, next_fn):
+        if patch.op == 'add' and isinstance(patch.value, str):
+            if patch.value.startswith('{{img:'):
+                filename = patch.value[6:-2]
+                patch = patch.replace(value=get_presigned_url(filename))
+        next_fn(patch)
+    
+    emitter.use(resolve_images)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```typescript
+    emitter.use((patch, next) => {
+      if (patch.op === 'add' && typeof patch.value === 'string') {
+        if (patch.value.startsWith('{{img:')) {
+          const filename = patch.value.slice(6, -2)
+          return next({ ...patch, value: getPresignedUrl(filename) })
+        }
+      }
+      next(patch)
+    })
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+### Strip restricted fields
+
+<Tabs items={['Python', 'Node']}>
+  <Tabs.Tab>
+    ```python
+    def strip_internal(patch, next_fn):
+        if 'internal' not in patch.path:
+            next_fn(patch)
+    
+    emitter.use(strip_internal)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```typescript
+    emitter.use((patch, next) => {
+      if (!patch.path.includes('internal')) next(patch)
+    })
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+### Inject a database value
+
+<Tabs items={['Python', 'Node']}>
+  <Tabs.Tab>
+    ```python
+    def inject_author(patch, next_fn):
+        next_fn(patch)
+        if patch.path == 'authorId' and patch.op == 'complete':
+            author = db.get_user(patch.value)
+            next_fn(StreamingChunk(path='author', value=author, op='add'))
+    
+    emitter.use(inject_author)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```typescript
+    emitter.use(async (patch, next) => {
+      next(patch)
+      if (patch.path === 'authorId' && patch.op === 'complete') {
+        const author = await db.getUser(patch.value as string)
+        next({ path: 'author', value: author, op: 'add' })
+      }
+    })
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+## Middleware receives all four ops
+
+Middleware sees `add`, `append`, `insert`, and `complete` patches. Drop a `complete` patch
+to suppress `pathcomplete` events for that path on the client.
+
+## Related
+
+- [Client-side Middleware](/guides/middleware-client)
+- [Emitter API — Python](/api/python/emitter)
+- [Emitter API — Node](/api/js/emitter)

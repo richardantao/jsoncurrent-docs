@@ -1,0 +1,115 @@
+---
+title: "Quick-start: Node + React"
+description: Stream structured JSON from a Node server to a React client.
+---
+
+import { Steps, Callout } from 'nextra/components'
+
+# Quick-start: Node + React
+
+Stream structured JSON from a Node/Express server to a React client.
+
+<Steps>
+
+### Install
+
+```bash
+npm install jsoncurrent @anthropic-ai/sdk
+```
+
+### Set up the Node Emitter
+
+```typescript
+import express from 'express'
+import Anthropic from '@anthropic-ai/sdk'
+import { Emitter } from 'jsoncurrent'
+
+const app = express()
+const client = new Anthropic()
+
+app.get('/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+
+  const emitter = new Emitter()
+
+  emitter.on('patch', (chunk) => {
+    res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+  })
+
+  emitter.on('complete', () => {
+    res.write('data: [DONE]\n\n')
+    res.end()
+  })
+
+  const stream = await client.messages.stream({
+    model: 'claude-opus-4-6',
+    max_tokens: 4096,
+    messages: [{ role: 'user', content: 'Generate a report as JSON...' }],
+  })
+
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      emitter.write(event.delta.text)
+    }
+  }
+
+  emitter.flush()
+})
+
+app.listen(3001)
+```
+
+### Wire the React Collector
+
+```tsx
+import { useJsonCurrent } from 'jsoncurrent/react'
+import { useEffect } from 'react'
+
+interface Report {
+  title: string
+  sections: { heading: string; body: string }[]
+}
+
+export function ReportViewer() {
+  const { data, status, consume, complete, reset } = useJsonCurrent<Report>()
+
+  useEffect(() => {
+    reset()
+    const source = new EventSource('http://localhost:3001/stream')
+    source.onmessage = (event) => {
+      if (event.data === '[DONE]') { complete(); source.close(); return }
+      consume(JSON.parse(event.data))
+    }
+    return () => source.close()
+  }, [])
+
+  return (
+    <div>
+      <h1>{data.title}</h1>
+      {data.sections?.map((section, i) => (
+        <section key={i}>
+          <h2>{section.heading}</h2>
+          <p>{section.body}</p>
+        </section>
+      ))}
+      {status === 'streaming' && <p>Generating…</p>}
+    </div>
+  )
+}
+```
+
+</Steps>
+
+<Callout type="info">
+  The Emitter and Collector are in the same npm package. The Emitter runs on the server,
+  the Collector and React hook run on the client.
+</Callout>
+
+## Next steps
+
+- [Add server-side middleware](/guides/middleware-server)
+- [Add client-side middleware](/guides/middleware-client)
+- [Full Emitter API reference](/api/js/emitter)
+- [useJsonCurrent API reference](/api/js/use-json-current)

@@ -1,0 +1,117 @@
+---
+title: useJsonCurrent
+description: API reference for the useJsonCurrent React hook.
+---
+
+# useJsonCurrent
+
+React hook wrapping a `Collector` instance. Exposes `consume`, `complete`, and `reset` for
+transport wiring, and `data` and `status` for rendering.
+
+## Import
+
+```typescript
+import { useJsonCurrent } from 'jsoncurrent/react'
+```
+
+## Usage
+
+```tsx
+function ReportViewer({ id }: { id: string }) {
+  const { data, status, consume, complete, reset } = useJsonCurrent<Report>({
+    onComplete: (final) => save(final),
+  })
+
+  useEffect(() => {
+    reset()
+    const source = new EventSource(`/api/stream/${id}`)
+    source.onmessage = (event) => {
+      if (event.data === '[DONE]') { complete(); source.close(); return }
+      consume(JSON.parse(event.data))
+    }
+    return () => source.close()
+  }, [id])
+
+  return <div>{data.title}</div>
+}
+```
+
+## Options
+
+```typescript
+useJsonCurrent<T>(options?: UseJsonCurrentOptions<T>)
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `middleware` | `MiddlewareFn[]` | Middleware applied before each patch is reconstructed. |
+| `onChange` | `(state: Partial<T>) => void` | Called on every data patch with the current partial state. |
+| `onPathStart` | `(path: string, value: unknown) => void` | Called the first time a path receives a patch. |
+| `onPathComplete` | `(path: string, value: unknown) => void` | Called when a path is fully assembled. |
+| `onComplete` | `(state: T) => void` | Called once when the stream ends. |
+| `onError` | `(err: Error) => void` | Called when an error occurs during patch application. |
+
+All callbacks are stored as stable refs — you can pass inline arrow functions without
+causing the Collector to be re-created on re-renders.
+
+## Return values
+
+```typescript
+const {
+  data,     // Partial<T>
+  status,   // StreamStatus
+  consume,  // (chunk: StreamingChunk) => void
+  complete, // () => void
+  reset,    // () => void
+} = useJsonCurrent<T>()
+```
+
+### `data`
+
+The current partially-assembled state. Updated on every data patch. `{}` until the first
+patch arrives.
+
+### `status`
+
+```typescript
+type StreamStatus = 'idle' | 'streaming' | 'complete' | 'error'
+```
+
+| Value | When |
+|-------|------|
+| `'idle'` | Before the first `consume()` call, or after `reset()` |
+| `'streaming'` | After the first `consume()`, before `complete()` |
+| `'complete'` | After `complete()` is called |
+| `'error'` | After an error is caught during patch application |
+
+### `consume(chunk)`
+
+Feed a deserialised `StreamingChunk` from your transport. Errors are caught and routed to
+`onError` rather than throwing.
+
+```typescript
+consume(JSON.parse(event.data)) // ← deserialise from your transport
+```
+
+### `complete()`
+
+Signal end of stream. Idempotent — calling it multiple times only fires `onComplete` once.
+
+### `reset()`
+
+Clear state and return to `idle`. Tears down the internal Collector and creates a fresh one
+on the next `consume()` call. Call this before starting a new generation.
+
+## Notes
+
+**Transport is yours.** The hook does not manage EventSource, WebSocket, or fetch connections.
+Wire those up in a `useEffect` and call `consume` / `complete` from your event handlers.
+
+**`onChange` vs `data`.** `data` triggers a React re-render on every patch. `onChange` gives
+you the same state without a re-render — useful for syncing to a ref or external store.
+
+## Related
+
+- [Progressive Rendering with React](/guides/progressive-rendering)
+- [Path Lifecycle Events](/guides/path-lifecycle)
+- [Collector API](/api/js/collector)

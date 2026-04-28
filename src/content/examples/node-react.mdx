@@ -1,0 +1,138 @@
+---
+title: Node + React
+description: Full end-to-end example streaming structured JSON from Express to React.
+---
+
+# Node + React
+
+Full end-to-end example using Express and the `useJsonCurrent` hook.
+
+## Backend
+
+```typescript filename="server.ts"
+import express from 'express'
+import cors from 'cors'
+import Anthropic from '@anthropic-ai/sdk'
+import { Emitter } from 'jsoncurrent'
+
+const app = express()
+app.use(cors({ origin: 'http://localhost:5173' }))
+
+const client = new Anthropic()
+
+const PROMPT = `Generate a report as JSON:
+{
+  "title": "...",
+  "sections": [{ "heading": "...", "body": "..." }]
+}
+Return only valid JSON.`
+
+app.get('/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+
+  const emitter = new Emitter()
+
+  emitter.on('patch', (chunk) => {
+    res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+  })
+
+  emitter.on('complete', () => {
+    res.write('data: [DONE]\n\n')
+    res.end()
+  })
+
+  emitter.on('error', (err) => {
+    console.error('Emitter error', err)
+    res.end()
+  })
+
+  try {
+    const stream = await client.messages.stream({
+      model: 'claude-opus-4-6',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: PROMPT }],
+    })
+
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        emitter.write(event.delta.text)
+      }
+    }
+
+    emitter.flush()
+  } catch (err) {
+    console.error(err)
+    res.end()
+  }
+})
+
+app.listen(3001, () => console.log('Server running on http://localhost:3001'))
+```
+
+## Frontend
+
+```tsx filename="src/App.tsx"
+import { useJsonCurrent } from 'jsoncurrent/react'
+import { useEffect, useState } from 'react'
+
+interface Section { heading: string; body: string }
+interface Report  { title: string; sections: Section[] }
+
+export default function App() {
+  const [completedSections, setCompletedSections] = useState<Section[]>([])
+
+  const { data, status, consume, complete, reset } = useJsonCurrent<Report>({
+    onPathComplete: (path, value) => {
+      if (/^sections\[\d+\]$/.test(path)) {
+        setCompletedSections(prev => [...prev, value as Section])
+      }
+    },
+  })
+
+  useEffect(() => {
+    reset()
+    setCompletedSections([])
+
+    const source = new EventSource('http://localhost:3001/stream')
+    source.onmessage = (event) => {
+      if (event.data === '[DONE]') { complete(); source.close(); return }
+      consume(JSON.parse(event.data))
+    }
+    source.onerror = () => source.close()
+    return () => source.close()
+  }, [])
+
+  return (
+    <main style={{ maxWidth: 720, margin: '0 auto', padding: '2rem' }}>
+      <h1>{data.title ?? <span style={{ opacity: 0.3 }}>—</span>}</h1>
+
+      {/* Sections complete one by one */}
+      {completedSections.map((section, i) => (
+        <section key={i} style={{ marginTop: '1.5rem' }}>
+          <h2>{section.heading}</h2>
+          <p>{section.body}</p>
+        </section>
+      ))}
+
+      {status === 'streaming' && (
+        <p style={{ color: '#999', marginTop: '1rem' }}>Generating…</p>
+      )}
+    </main>
+  )
+}
+```
+
+## Run it
+
+```bash
+# Install
+npm install jsoncurrent @anthropic-ai/sdk express cors
+
+# Backend
+npx ts-node server.ts
+
+# Frontend (new terminal)
+npm run dev
+```

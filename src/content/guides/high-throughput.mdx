@@ -1,0 +1,46 @@
+---
+title: High-throughput Routes
+description: Disable completion patches to reduce wire overhead on routes that don't need lifecycle events.
+---
+
+# High-throughput Routes
+
+`complete` patches are emitted by default for every value in the stream. On routes where
+`pathstart` and `pathcomplete` events are not used, these patches add unnecessary overhead.
+
+## Disable completions
+
+```python
+# Python
+emitter = Emitter(completions=False)
+```
+
+```typescript
+// Node
+const emitter = new Emitter({ completions: false })
+```
+
+With completions disabled, `complete` patches are not emitted and the Collector's
+`pathcomplete` event never fires. `pathstart`, `change`, and `complete` (stream-level)
+continue to work normally.
+
+## When to disable
+
+Disable completions when all of the following are true:
+
+- The route does not use `onPathComplete` or `collector.on('pathcomplete', ...)`
+- The route does not use `onPathStart` based on path sealing
+- Wire efficiency matters (high request volume, large response payloads)
+
+## When to keep them on
+
+Keep completions enabled (the default) whenever:
+
+- You use the skeleton → complete rendering pattern
+- You want to render sub-values as soon as they're sealed without polling `change`
+- You're unsure — the overhead is small and the default is the safe choice
+
+## Related
+
+- [Path Lifecycle Events](/guides/path-lifecycle)
+- [Wire Protocol — complete patches](/protocol/complete-patches)
