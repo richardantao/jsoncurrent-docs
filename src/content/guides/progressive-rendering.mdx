@@ -95,7 +95,7 @@ or writing to a ref:
 const latestRef = useRef<Partial<Report>>({})
 
 useJsonCurrent<Report>({
-  onChange: (state) => { latestRef.current = state },
+  onChange: (state, _path, _op) => { latestRef.current = state },
 })
 ```
 

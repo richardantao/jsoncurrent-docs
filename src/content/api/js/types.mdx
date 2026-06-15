@@ -59,7 +59,7 @@ Status values returned by `useJsonCurrent`.
 
 ```typescript
 interface CollectorEvents<T> {
-  change:       (state: Partial<T>) => void
+  change:       (state: Partial<T>, path: string, op: Op) => void
   complete:     (state: T) => void
   pathstart:    (path: string, value: unknown) => void
   pathcomplete: (path: string, value: unknown) => void
@@ -93,7 +93,7 @@ Emitter, or when an unknown op is consumed by the Collector.
 ```typescript
 interface UseJsonCurrentOptions<T> {
   middleware?:     MiddlewareFn[]
-  onChange?:       (state: Partial<T>) => void
+  onChange?:       (state: Partial<T>, path: string, op: Op) => void
   onPathStart?:    (path: string, value: unknown) => void
   onPathComplete?: (path: string, value: unknown) => void
   onComplete?:     (state: T) => void

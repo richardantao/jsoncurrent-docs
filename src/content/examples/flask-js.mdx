@@ -67,7 +67,7 @@ def stream():
 
     const collector = new Collector()
 
-    collector.on('change', (state) => {
+    collector.on('change', (state, path, op) => {
       if (state.title)   document.getElementById('title').textContent   = state.title
       if (state.summary) document.getElementById('summary').textContent = state.summary
       if (state.points) {

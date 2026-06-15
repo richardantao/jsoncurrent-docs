@@ -45,7 +45,7 @@ useJsonCurrent<T>(options?: UseJsonCurrentOptions<T>)
 | Option | Type | Description |
 |--------|------|-------------|
 | `middleware` | `MiddlewareFn[]` | Middleware applied before each patch is reconstructed. |
-| `onChange` | `(state: Partial<T>) => void` | Called on every data patch with the current partial state. |
+| `onChange` | `(state: Partial<T>, path: string, op: Op) => void` | Called on every data patch with the current partial state and patch metadata. |
 | `onPathStart` | `(path: string, value: unknown) => void` | Called the first time a path receives a patch. |
 | `onPathComplete` | `(path: string, value: unknown) => void` | Called when a path is fully assembled. |
 | `onComplete` | `(state: T) => void` | Called once when the stream ends. |

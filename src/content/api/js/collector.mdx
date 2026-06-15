@@ -77,7 +77,7 @@ collector.use((patch, next) => {
 Fires on every data patch (`add`, `append`, `insert`) with the current partial state.
 
 ```typescript
-collector.on('change', (state: Partial<T>) => {
+collector.on('change', (state: Partial<T>, path: string, op: Op) => {
   setData(state)
 })
 ```
