@@ -45,6 +45,7 @@ useJsonCurrent<T>(options?: UseJsonCurrentOptions<T>)
 | Option | Type | Description |
 |--------|------|-------------|
 | `middleware` | `MiddlewareFn[]` | Middleware applied before each patch is reconstructed. |
+| `flush` | `FlushFn` | Optional pacing callback passed to the internal `Collector` to pace `change` event emission. |
 | `onChange` | `(state: Partial<T>, path: string, op: Op) => void` | Called on every data patch with the current partial state and patch metadata. |
 | `onPathStart` | `(path: string, value: unknown) => void` | Called the first time a path receives a patch. |
 | `onPathComplete` | `(path: string, value: unknown) => void` | Called when a path is fully assembled. |
@@ -109,6 +110,10 @@ Wire those up in a `useEffect` and call `consume` / `complete` from your event h
 
 **`onChange` vs `data`.** `data` triggers a React re-render on every patch. `onChange` gives
 you the same state without a re-render — useful for syncing to a ref or external store.
+
+**Flush behavior.** When `flush` is provided, only `change` emission is paced. `pathstart`,
+`pathcomplete`, and `error` remain immediate, and queued `change` events are drained before
+stream-level `complete`.
 
 ## Related
 

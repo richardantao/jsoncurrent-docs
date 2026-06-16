@@ -18,6 +18,23 @@ const collector = new Collector<T>()
 
 The type parameter `T` is the expected shape of the fully assembled object.
 
+### Optional pacing
+
+You can provide a `flush` callback to pace `change` event emission.
+
+```typescript
+const collector = new Collector<T>({
+  flush: () => new Promise(requestAnimationFrame),
+})
+```
+
+When `flush` is provided:
+
+- only `change` event emission is paced
+- `pathstart`, `pathcomplete`, and `error` remain immediate
+- middleware runs on queued chunks before patch application
+- queued `change` events are drained before stream-level `complete`
+
 ## Properties
 
 ### `collector.value`

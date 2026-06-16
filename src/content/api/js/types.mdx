@@ -47,6 +47,22 @@ type MiddlewareFn = (
 
 Middleware function signature used by both `Emitter.use()` and `Collector.use()`.
 
+## FlushFn
+
+```typescript
+type FlushFn = () => void | Promise<void>
+```
+
+Optional callback used to yield between queued `change` emissions in `Collector`.
+
+## CollectorOptions
+
+```typescript
+interface CollectorOptions {
+  flush?: FlushFn
+}
+```
+
 ## StreamStatus
 
 ```typescript
@@ -93,6 +109,7 @@ Emitter, or when an unknown op is consumed by the Collector.
 ```typescript
 interface UseJsonCurrentOptions<T> {
   middleware?:     MiddlewareFn[]
+  flush?:          FlushFn
   onChange?:       (state: Partial<T>, path: string, op: Op) => void
   onPathStart?:    (path: string, value: unknown) => void
   onPathComplete?: (path: string, value: unknown) => void
